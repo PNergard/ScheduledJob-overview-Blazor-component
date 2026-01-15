@@ -1,0 +1,30 @@
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="~/" />
+    <title>@Model.CurrentPage.MetaTitle</title>
+    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <style>
+        body {
+            background-color: var(--mud-palette-background);
+            color: var(--mud-palette-text-primary);
+        }
+    </style>
+</head>
+<body>
+    @Html.AntiForgeryToken()
+
+    // Render your component here
+
+    <script src="_framework/blazor.server.js"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="~/js/blazor-helpers.js"></script>
+</body>
+</html>
