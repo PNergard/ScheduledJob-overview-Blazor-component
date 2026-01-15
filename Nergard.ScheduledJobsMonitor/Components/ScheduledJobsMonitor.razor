@@ -1,0 +1,427 @@
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    @if (!string.IsNullOrEmpty(_statusMessage))
+    {
+        <MudAlert Severity="@_messageSeverity" Class="mb-4" CloseIconClicked="ClearStatusMessage" CloseIcon="@Icons.Material.Filled.Close">
+            @_statusMessage
+        </MudAlert>
+    }
+
+    <MudGrid>
+        <MudItem xs="12" md="6" lg="7">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudStack Spacing="2">
+                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                        <MudText Typo="Typo.h6">Scheduled Jobs</MudText>
+                        <MudSpacer />
+                        <MudSwitch @bind-Value="_checkLastStatus"
+                                   Color="Color.Primary"
+                                   Label="Check Last Status"
+                                   title="When enabled, checks if the last execution of each job succeeded or failed" />
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   OnClick="RefreshJobs"
+                                   Disabled="_isLoading"
+                                   StartIcon="@Icons.Material.Filled.Refresh">
+                            Refresh
+                        </MudButton>
+                    </MudStack>
+
+                    @* Filter textbox *@
+                    <MudTextField @bind-Value="_filterText"
+                                  Placeholder="Filter jobs by name..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  IconSize="Size.Medium"
+                                  Clearable="true"
+                                  Immediate="true"
+                                  Margin="Margin.Dense" />
+
+                    @if (_isLoading && _jobs.Count == 0)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                        <MudText Align="Align.Center" Class="my-4">Loading scheduled jobs...</MudText>
+                    }
+                    else if (_jobs.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Info">No scheduled jobs found.</MudAlert>
+                    }
+                    else
+                    {
+                        @* Tabs for Custom vs Built-in jobs *@
+                        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4">
+                            <MudTabPanel Text="Custom"
+                                         BadgeData="@FilteredCustomJobs.Count"
+                                         BadgeColor="Color.Primary">
+                                @if (FilteredCustomJobs.Count == 0)
+                                {
+                                    <MudAlert Severity="Severity.Info">
+                                        @(_filterText.Length > 0 ? "No custom jobs match the filter." : "No custom jobs found.")
+                                    </MudAlert>
+                                }
+                                else
+                                {
+                                    <MudTable T="JobViewModel"
+                                              Items="FilteredCustomJobs"
+                                              Hover="true"
+                                              Dense="true"
+                                              SelectedItemChanged="OnJobSelected"
+                                              SelectedItem="_selectedJob"
+                                              Elevation="0">
+                                        <HeaderContent>
+                                            <MudTh>Status</MudTh>
+                                            <MudTh>Job Name</MudTh>
+                                            <MudTh>Last Run</MudTh>
+                                            <MudTh>Next Run</MudTh>
+                                            <MudTh>Actions</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate>
+                                            <MudTd DataLabel="Status">
+                                                <MudStack Row="true" Spacing="1">
+                                                    @if (context.IsRunning)
+                                                    {
+                                                        <MudIcon Icon="@Icons.Material.Filled.PlayArrow" Color="Color.Success" Size="Size.Small" />
+                                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                                    }
+                                                    else if (!context.IsEnabled)
+                                                    {
+                                                        <MudIcon Icon="@Icons.Material.Filled.PauseCircle" Color="Color.Default" Size="Size.Small" />
+                                                    }
+                                                    else if (context.HasLastExecutionFailed)
+                                                    {
+                                                        <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                                                    }
+                                                </MudStack>
+                                            </MudTd>
+                                            <MudTd DataLabel="Job Name">
+                                                <MudText Typo="Typo.body2">@context.Name</MudText>
+                                                @if (!context.IsEnabled)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip>
+                                                }
+                                            </MudTd>
+                                            <MudTd DataLabel="Last Run">
+                                                @if (context.LastExecution.HasValue)
+                                                {
+                                                    <MudText Typo="Typo.body2">@context.LastExecution.Value.ToString("yyyy-MM-dd HH:mm")</MudText>
+                                                }
+                                                else
+                                                {
+                                                    <MudText Typo="Typo.body2" Color="Color.Default">Never</MudText>
+                                                }
+                                            </MudTd>
+                                            <MudTd DataLabel="Next Run">
+                                                @if (context.NextExecution.HasValue && context.IsEnabled)
+                                                {
+                                                    <MudText Typo="Typo.body2">@context.NextExecution.Value.ToString("yyyy-MM-dd HH:mm")</MudText>
+                                                }
+                                                else
+                                                {
+                                                    <MudText Typo="Typo.body2" Color="Color.Default">-</MudText>
+                                                }
+                                            </MudTd>
+                                            <MudTd DataLabel="Actions">
+                                                <MudButton Size="Size.Small"
+                                                           Variant="Variant.Filled"
+                                                           Color="Color.Primary"
+                                                           OnClick="@(() => ExecuteJob(context))"
+                                                           Disabled="@(context.IsRunning || _isExecuting)"
+                                                           StartIcon="@Icons.Material.Filled.PlayArrow">
+                                                    Run
+                                                </MudButton>
+                                            </MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                }
+                            </MudTabPanel>
+
+                            <MudTabPanel Text="Optimizely"
+                                         BadgeData="@FilteredBuiltInJobs.Count"
+                                         BadgeColor="Color.Default">
+                                @if (FilteredBuiltInJobs.Count == 0)
+                                {
+                                    <MudAlert Severity="Severity.Info">
+                                        @(_filterText.Length > 0 ? "No built-in jobs match the filter." : "No built-in jobs found.")
+                                    </MudAlert>
+                                }
+                                else
+                                {
+                                    <MudTable T="JobViewModel"
+                                              Items="FilteredBuiltInJobs"
+                                              Hover="true"
+                                              Dense="true"
+                                              SelectedItemChanged="OnJobSelected"
+                                              SelectedItem="_selectedJob"
+                                              Elevation="0">
+                                        <HeaderContent>
+                                            <MudTh>Status</MudTh>
+                                            <MudTh>Job Name</MudTh>
+                                            <MudTh>Last Run</MudTh>
+                                            <MudTh>Next Run</MudTh>
+                                            <MudTh>Actions</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate>
+                                            <MudTd DataLabel="Status">
+                                                <MudStack Row="true" Spacing="1">
+                                                    @if (context.IsRunning)
+                                                    {
+                                                        <MudIcon Icon="@Icons.Material.Filled.PlayArrow" Color="Color.Success" Size="Size.Small" />
+                                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                                    }
+                                                    else if (!context.IsEnabled)
+                                                    {
+                                                        <MudIcon Icon="@Icons.Material.Filled.PauseCircle" Color="Color.Default" Size="Size.Small" />
+                                                    }
+                                                    else if (context.HasLastExecutionFailed)
+                                                    {
+                                                        <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                                                    }
+                                                </MudStack>
+                                            </MudTd>
+                                            <MudTd DataLabel="Job Name">
+                                                <MudText Typo="Typo.body2">@context.Name</MudText>
+                                                @if (!context.IsEnabled)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip>
+                                                }
+                                            </MudTd>
+                                            <MudTd DataLabel="Last Run">
+                                                @if (context.LastExecution.HasValue)
+                                                {
+                                                    <MudText Typo="Typo.body2">@context.LastExecution.Value.ToString("yyyy-MM-dd HH:mm")</MudText>
+                                                }
+                                                else
+                                                {
+                                                    <MudText Typo="Typo.body2" Color="Color.Default">Never</MudText>
+                                                }
+                                            </MudTd>
+                                            <MudTd DataLabel="Next Run">
+                                                @if (context.NextExecution.HasValue && context.IsEnabled)
+                                                {
+                                                    <MudText Typo="Typo.body2">@context.NextExecution.Value.ToString("yyyy-MM-dd HH:mm")</MudText>
+                                                }
+                                                else
+                                                {
+                                                    <MudText Typo="Typo.body2" Color="Color.Default">-</MudText>
+                                                }
+                                            </MudTd>
+                                            <MudTd DataLabel="Actions">
+                                                <MudButton Size="Size.Small"
+                                                           Variant="Variant.Filled"
+                                                           Color="Color.Primary"
+                                                           OnClick="@(() => ExecuteJob(context))"
+                                                           Disabled="@(context.IsRunning || _isExecuting)"
+                                                           StartIcon="@Icons.Material.Filled.PlayArrow">
+                                                    Run
+                                                </MudButton>
+                                            </MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                }
+                            </MudTabPanel>
+                        </MudTabs>
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6" lg="5">
+            <MudPaper Class="pa-4" Elevation="2" Style="min-height: 400px;">
+                @if (_selectedJob == null)
+                {
+                    <MudText Align="Align.Center" Color="Color.Default" Class="my-8">
+                        Select a job to view execution history
+                    </MudText>
+                }
+                else
+                {
+                    <MudStack Spacing="2">
+                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.h6">@_selectedJob.Name</MudText>
+                            <MudSpacer />
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       OnClick="ExportMessages"
+                                       Disabled="@(_allMessages.Count == 0)"
+                                       StartIcon="@Icons.Material.Filled.Download"
+                                       Size="Size.Small">
+                                Export
+                            </MudButton>
+                        </MudStack>
+                        <MudDivider />
+
+                        @if (_isLoadingHistory)
+                        {
+                            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                            <MudText Align="Align.Center">Loading execution history...</MudText>
+                        }
+                        else if (_allMessages.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Info">No execution history available.</MudAlert>
+                        }
+                        else
+                        {
+                            <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-2">
+                                <MudTabPanel Text="Last Run">
+                                    @{
+                                        var latestLog = GetLatestLogEntry();
+                                    }
+                                    @if (latestLog != null)
+                                    {
+                                        <MudStack Spacing="2">
+                                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                                <MudIcon Icon="@(IsLogEntrySuccessful(latestLog) ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)"
+                                                         Color="@(IsLogEntrySuccessful(latestLog) ? Color.Success : Color.Error)"
+                                                         Size="Size.Medium" />
+                                                <MudText Typo="Typo.subtitle1">
+                                                    <strong>@latestLog.CompletedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</strong>
+                                                </MudText>
+                                            </MudStack>
+
+                                            <MudPaper Class="pa-3" Outlined="true">
+                                                <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">
+                                                    @latestLog.Message
+                                                </MudText>
+                                            </MudPaper>
+                                        </MudStack>
+                                    }
+                                    else
+                                    {
+                                        <MudAlert Severity="Severity.Info">No execution data available.</MudAlert>
+                                    }
+                                </MudTabPanel>
+
+                                <MudTabPanel Text="All Messages" BadgeData="@_allMessages.Count" BadgeColor="Color.Info">
+                                    <MudStack Spacing="2">
+                                        <MudTextField @bind-Value="_messageFilterText"
+                                                      Placeholder="Filter messages..."
+                                                      Adornment="Adornment.Start"
+                                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                                      IconSize="Size.Medium"
+                                                      Clearable="true"
+                                                      Immediate="true"
+                                                      Margin="Margin.Dense" />
+
+                                        @{
+                                            var filteredMessages = GetFilteredMessages();
+                                        }
+
+                                        @if (filteredMessages.Count == 0)
+                                        {
+                                            <MudAlert Severity="Severity.Info">No messages match the filter.</MudAlert>
+                                        }
+                                        else
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Default">
+                                                Showing @filteredMessages.Count of @_allMessages.Count messages
+                                            </MudText>
+
+                                            <MudList T="string" Dense="true" Style="max-height: 500px; overflow-y: auto;">
+                                                @foreach (var message in filteredMessages)
+                                                {
+                                                    <MudListItem T="string">
+                                                        <MudStack Spacing="1">
+                                                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                                                <MudIcon Icon="@(IsLogEntrySuccessful(message) ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)"
+                                                                         Color="@(IsLogEntrySuccessful(message) ? Color.Success : Color.Error)"
+                                                                         Size="Size.Small" />
+                                                                <MudText Typo="Typo.caption">
+                                                                    @message.CompletedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                                                                </MudText>
+                                                                <MudSpacer />
+                                                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                                               Size="Size.Small"
+                                                                               OnClick="@(() => OpenMessageDetail(message))"
+                                                                               title="View full message" />
+                                                            </MudStack>
+
+                                                            <MudText Typo="Typo.body2" Color="Color.Default" Style="word-break: break-word;">
+                                                                @GetMessageSnippet(message.Message)
+                                                            </MudText>
+                                                        </MudStack>
+                                                    </MudListItem>
+                                                    <MudDivider />
+                                                }
+                                            </MudList>
+                                        }
+                                    </MudStack>
+                                </MudTabPanel>
+                            </MudTabs>
+                        }
+                    </MudStack>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@* Message Detail Dialog *@
+@if (_messageDetailOpen && _selectedMessage != null)
+{
+    <MudOverlay Visible="true" OnClick="CloseMessageDetail" ZIndex="1300">
+        <MudPaper Class="pa-6" Style="max-width: 800px; max-height: 90vh; overflow-y: auto; position: relative;" @onclick:stopPropagation="true">
+            <MudStack Spacing="3">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.h6">Message Details</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Default">
+                            @_selectedMessage.CompletedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                        </MudText>
+                    </MudStack>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="CloseMessageDetail" />
+                </MudStack>
+
+                <MudDivider />
+
+                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                    <MudIcon Icon="@(IsLogEntrySuccessful(_selectedMessage) ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)"
+                             Color="@(IsLogEntrySuccessful(_selectedMessage) ? Color.Success : Color.Error)"
+                             Size="Size.Medium" />
+                    <MudText Typo="Typo.subtitle1">
+                        Status: <strong>@(IsLogEntrySuccessful(_selectedMessage) ? "Success" : "Failed")</strong>
+                    </MudText>
+                </MudStack>
+
+                <MudTextField @bind-Value="_messageHighlightText"
+                              Label="Highlight Keywords"
+                              Placeholder="Enter keywords to highlight (space-separated)..."
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Highlight"
+                              Clearable="true"
+                              Immediate="true"
+                              Variant="Variant.Outlined" />
+
+                <MudDivider />
+
+                <MudText Typo="Typo.subtitle2">Message:</MudText>
+
+                <MudPaper Class="pa-3" Outlined="true" Style="max-height: 400px; overflow-y: auto;">
+                    @if (string.IsNullOrWhiteSpace(_messageHighlightText))
+                    {
+                        <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">
+                            @_selectedMessage.Message
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">
+                            @((MarkupString)HighlightKeywords(_selectedMessage.Message))
+                        </MudText>
+                    }
+                </MudPaper>
+
+                <MudStack Row="true" Justify="Justify.FlexEnd">
+                    <MudButton OnClick="CloseMessageDetail" Color="Color.Primary" Variant="Variant.Filled">Close</MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+    </MudOverlay>
+}
